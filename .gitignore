@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+.gradle/
+android/.gradle/
+android/app/build/
+dist/
