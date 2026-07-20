@@ -1,5 +1,16 @@
 # OpenTetrd 0.1
 
+## 다운로드
+
+| 플랫폼 | 설치 파일 | 지원 환경 |
+| --- | --- | --- |
+| Android | **[APK 다운로드](https://github.com/qkaTlehdrnf/OpenTetrd/releases/download/v0.1.0/OpenTetrd-Android-0.1.0-debug.apk)** | Android 8.0 / API 26 이상 |
+| macOS | **[macOS 앱 다운로드](https://github.com/qkaTlehdrnf/OpenTetrd/releases/download/v0.1.0/OpenTetrd-macOS-arm64-0.1.0.zip)** | Apple Silicon, macOS 13 이상 |
+
+[전체 릴리스와 SHA-256 체크섬 보기](https://github.com/qkaTlehdrnf/OpenTetrd/releases/tag/v0.1.0)
+
+> 현재 `v0.1.0`은 초기 시험판입니다. macOS 앱은 공증되지 않았으므로 압축 해제 후 앱을 Control-클릭하고 **열기**를 선택해야 할 수 있습니다.
+
 Tetrd를 끄지 않은 채 별도의 요청만 휴대폰 인터넷으로 보내 시험하는 안전 우선 프로토타입입니다.
 Android 릴레이가 목적지 TCP 연결을 만들고, Mac의 SOCKS5 프록시가 그 연결을 USB의 ADB 포트 포워딩으로 사용합니다.
 
