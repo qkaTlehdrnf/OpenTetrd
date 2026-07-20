@@ -7,6 +7,7 @@ import asyncio
 import ipaddress
 import logging
 import signal
+import socket
 import struct
 
 from .protocol import STATUS_OK, bridge, encode_request
@@ -14,6 +15,17 @@ from .protocol import STATUS_OK, bridge, encode_request
 LOG = logging.getLogger("opentetrd.desktop")
 SOCKS_FAILURE = b"\x05\x01\x00\x01\x00\x00\x00\x00\x00\x00"
 SOCKS_SUCCESS = b"\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+HANDSHAKE_TIMEOUT = 30.0
+
+
+def _set_nodelay(writer: asyncio.StreamWriter) -> None:
+    """Proxied traffic is mostly small interactive writes; Nagle only adds latency."""
+    sock = writer.get_extra_info("socket")
+    if sock is not None:
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
 
 
 async def read_socks_destination(reader: asyncio.StreamReader) -> tuple[str, int]:
@@ -43,36 +55,44 @@ class SocksProxy:
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")
         relay_writer: asyncio.StreamWriter | None = None
+        replied = False
         try:
-            version, methods_count = await reader.readexactly(2)
-            methods = await reader.readexactly(methods_count)
-            if version != 5 or 0 not in methods:
-                writer.write(b"\x05\xff")
+            _set_nodelay(writer)
+            # A client that connects and then goes silent must not pin this task forever.
+            async with asyncio.timeout(HANDSHAKE_TIMEOUT):
+                version, methods_count = await reader.readexactly(2)
+                methods = await reader.readexactly(methods_count)
+                if version != 5 or 0 not in methods:
+                    writer.write(b"\x05\xff")
+                    await writer.drain()
+                    return
+                writer.write(b"\x05\x00")
                 await writer.drain()
-                return
-            writer.write(b"\x05\x00")
-            await writer.drain()
-            host, port = await read_socks_destination(reader)
-            relay_reader, relay_writer = await asyncio.open_connection(
-                self.relay_host, self.relay_port
-            )
-            relay_writer.write(encode_request(host, port))
-            await relay_writer.drain()
-            status = (await relay_reader.readexactly(1))[0]
+                host, port = await read_socks_destination(reader)
+                relay_reader, relay_writer = await asyncio.open_connection(
+                    self.relay_host, self.relay_port
+                )
+                _set_nodelay(relay_writer)
+                relay_writer.write(encode_request(host, port))
+                await relay_writer.drain()
+                status = (await relay_reader.readexactly(1))[0]
             if status != STATUS_OK:
                 raise ConnectionError(f"phone relay rejected destination ({status})")
             writer.write(SOCKS_SUCCESS)
             await writer.drain()
+            replied = True
             LOG.info("tunneling %s:%d for %s", host, port, peer)
             await bridge(reader, writer, relay_reader, relay_writer)
             relay_writer = None
-        except (asyncio.IncompleteReadError, ConnectionError, OSError, ValueError) as exc:
+        except (asyncio.IncompleteReadError, OSError, ValueError, TimeoutError) as exc:
             LOG.warning("connection %s failed: %s", peer, exc)
-            if not writer.is_closing():
+            # Once the success reply is out the socket carries tunnelled bytes; a
+            # failure reply written here would be injected into the payload stream.
+            if not replied and not writer.is_closing():
                 try:
                     writer.write(SOCKS_FAILURE)
                     await writer.drain()
-                except ConnectionError:
+                except OSError:
                     pass
         finally:
             if relay_writer is not None:

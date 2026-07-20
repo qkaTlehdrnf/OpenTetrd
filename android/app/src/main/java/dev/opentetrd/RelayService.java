@@ -20,6 +20,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -33,6 +34,8 @@ public final class RelayService extends Service {
     private final ExecutorService workers = Executors.newCachedThreadPool();
     private volatile ServerSocket server;
     public static volatile boolean running;
+    /** Last listener failure, surfaced by MainActivity; null once the relay starts cleanly. */
+    public static volatile String lastError;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -56,8 +59,8 @@ public final class RelayService extends Service {
                 new Intent(this, MainActivity.class),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, channelId)
-                .setContentTitle("OpenTetrd 릴레이 실행 중")
-                .setContentText("USB 로컬 포트 8787에서 대기 중")
+                .setContentTitle("OpenTetrd relay running")
+                .setContentText("Listening on local USB port " + PORT)
                 .setSmallIcon(android.R.drawable.stat_sys_upload_done)
                 .setContentIntent(open)
                 .setOngoing(true)
@@ -66,6 +69,7 @@ public final class RelayService extends Service {
 
     private synchronized void startRelay() {
         if (running) return;
+        lastError = null;
         running = true;
         workers.execute(() -> {
             try (ServerSocket listener = new ServerSocket()) {
@@ -77,7 +81,16 @@ public final class RelayService extends Service {
                     workers.execute(() -> handle(local));
                 }
             } catch (IOException error) {
-                if (running) Log.e(TAG, "relay listener failed", error);
+                // A failed bind (port already taken) used to leave a foreground
+                // notification claiming the relay was up. Tear the service down instead
+                // so the UI and the notification tell the truth.
+                if (running) {
+                    Log.e(TAG, "relay listener failed", error);
+                    running = false;
+                    lastError = String.valueOf(error.getMessage());
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                    stopSelf();
+                }
             } finally {
                 server = null;
                 running = false;
@@ -136,25 +149,32 @@ public final class RelayService extends Service {
         }
     }
 
+    /**
+     * Relays until both directions reach EOF. This thread pumps one direction itself and
+     * only borrows a second worker for the other, so a connection costs two threads
+     * rather than three blocked on a monitor.
+     */
     private void relayBothWays(Socket local, Socket remote) throws IOException {
-        Object monitor = new Object();
-        int[] finished = {0};
-        workers.execute(() -> pump(local, remote, monitor, finished));
-        workers.execute(() -> pump(remote, local, monitor, finished));
-        synchronized (monitor) {
-            while (finished[0] < 2) {
-                try {
-                    monitor.wait();
-                } catch (InterruptedException error) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("relay interrupted", error);
-                }
+        CountDownLatch reverseDone = new CountDownLatch(1);
+        workers.execute(() -> {
+            try {
+                pump(remote, local);
+            } finally {
+                reverseDone.countDown();
             }
+        });
+        pump(local, remote);
+        try {
+            reverseDone.await();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IOException("relay interrupted", error);
+        } finally {
+            closeQuietly(remote);
         }
-        closeQuietly(remote);
     }
 
-    private static void pump(Socket source, Socket destination, Object monitor, int[] finished) {
+    private static void pump(Socket source, Socket destination) {
         try {
             InputStream input = source.getInputStream();
             OutputStream output = destination.getOutputStream();
@@ -165,11 +185,6 @@ public final class RelayService extends Service {
             }
             try { destination.shutdownOutput(); } catch (IOException ignored) { }
         } catch (IOException ignored) {
-        } finally {
-            synchronized (monitor) {
-                finished[0]++;
-                monitor.notifyAll();
-            }
         }
     }
 

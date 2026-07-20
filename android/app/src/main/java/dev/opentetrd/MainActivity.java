@@ -38,42 +38,61 @@ public final class MainActivity extends Activity {
         root.addView(title);
 
         TextView explanation = new TextView(this);
-        explanation.setText("USB를 통해 휴대폰 인터넷을 Mac의 로컬 SOCKS 프록시에 전달합니다.\n"
-                + "시스템 VPN이나 휴대폰 테더링 설정은 변경하지 않습니다.");
+        explanation.setText("Forwards this phone's internet access to a local SOCKS proxy "
+                + "on your Mac over USB.\n"
+                + "It does not change the system VPN or phone tethering settings.");
         explanation.setTextSize(16);
         explanation.setGravity(Gravity.CENTER);
         explanation.setPadding(0, pad, 0, pad);
         root.addView(explanation);
 
         status = new TextView(this);
-        status.setText(RelayService.running ? "릴레이 실행 중 · 127.0.0.1:8787" : "릴레이 중지됨");
         status.setTextSize(17);
         status.setPadding(0, 0, 0, pad);
         root.addView(status);
 
         Button start = new Button(this);
-        start.setText("릴레이 시작");
+        start.setText("Start relay");
         start.setOnClickListener(v -> {
             Intent intent = new Intent(this, RelayService.class);
             intent.setAction(RelayService.ACTION_START);
             startForegroundService(intent);
-            status.setText("릴레이 시작 중 · 127.0.0.1:8787");
+            status.setText("Starting relay · 127.0.0.1:8787");
         });
         root.addView(start, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         Button stop = new Button(this);
-        stop.setText("릴레이 중지");
+        stop.setText("Stop relay");
         stop.setOnClickListener(v -> {
             Intent intent = new Intent(this, RelayService.class);
             intent.setAction(RelayService.ACTION_STOP);
             startService(intent);
-            status.setText("릴레이 중지됨");
+            status.setText("Relay stopped");
         });
         LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         stopParams.topMargin = pad / 2;
         root.addView(stop, stopParams);
         setContentView(root);
+        refreshStatus();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // onCreate does not run when returning from the background, so the label would
+        // otherwise keep showing whatever the relay state was when the activity was built.
+        refreshStatus();
+    }
+
+    private void refreshStatus() {
+        if (RelayService.running) {
+            status.setText("Relay running · 127.0.0.1:8787");
+        } else if (RelayService.lastError != null) {
+            status.setText("Relay stopped · " + RelayService.lastError);
+        } else {
+            status.setText("Relay stopped");
+        }
     }
 }

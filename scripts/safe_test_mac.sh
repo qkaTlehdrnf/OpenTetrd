@@ -23,16 +23,16 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 fail() {
-    printf '오류: %s\n' "$1" >&2
+    printf 'Error: %s\n' "$1" >&2
     exit 1
 }
 
-command -v adb >/dev/null 2>&1 || fail "adb가 없습니다. Android platform-tools를 설치하세요."
-command -v curl >/dev/null 2>&1 || fail "curl이 없습니다."
+command -v adb >/dev/null 2>&1 || fail "adb not found. Install the Android platform-tools."
+command -v curl >/dev/null 2>&1 || fail "curl not found."
 
 DEVICES=$(adb devices | awk 'NR > 1 && $2 == "device" { print $1 }')
 DEVICE_COUNT=$(printf '%s\n' "$DEVICES" | awk 'NF { count++ } END { print count+0 }')
-[ "$DEVICE_COUNT" -eq 1 ] || fail "승인된 Android USB 장치가 정확히 1대여야 합니다 (현재 $DEVICE_COUNT대)."
+[ "$DEVICE_COUNT" -eq 1 ] || fail "Exactly one authorized Android USB device is required (found $DEVICE_COUNT)."
 SERIAL=$(printf '%s\n' "$DEVICES" | awk 'NF { print; exit }')
 
 EXISTING=$(adb forward --list | awk -v p="tcp:$ADB_PORT" '$2 == p { print $1 " " $3 }')
@@ -40,18 +40,18 @@ if [ -n "$EXISTING" ]; then
     EXISTING_SERIAL=$(printf '%s\n' "$EXISTING" | awk '{print $1; exit}')
     EXISTING_REMOTE=$(printf '%s\n' "$EXISTING" | awk '{print $2; exit}')
     [ "$EXISTING_SERIAL" = "$SERIAL" ] && [ "$EXISTING_REMOTE" = "tcp:$ADB_PORT" ] \
-        || fail "tcp:$ADB_PORT의 기존 ADB 매핑을 덮어쓰지 않습니다: $EXISTING"
-    printf '기존 ADB 포트 매핑을 그대로 사용합니다.\n'
+        || fail "Refusing to overwrite an existing ADB mapping for tcp:$ADB_PORT: $EXISTING"
+    printf 'Reusing the existing ADB port mapping.\n'
 else
     nc -z 127.0.0.1 "$ADB_PORT" >/dev/null 2>&1 \
-        && fail "Mac의 127.0.0.1:$ADB_PORT가 이미 사용 중입니다."
+        && fail "127.0.0.1:$ADB_PORT is already in use on this Mac."
     adb -s "$SERIAL" forward "tcp:$ADB_PORT" "tcp:$ADB_PORT" >/dev/null
     CREATED_FORWARD=1
-    printf '임시 ADB 포트 매핑을 만들었습니다 (종료 시 제거).\n'
+    printf 'Created a temporary ADB port mapping (removed on exit).\n'
 fi
 
 nc -z 127.0.0.1 "$SOCKS_PORT" >/dev/null 2>&1 \
-    && fail "Mac의 127.0.0.1:$SOCKS_PORT가 이미 사용 중입니다."
+    && fail "127.0.0.1:$SOCKS_PORT is already in use on this Mac."
 
 ROUTE_BEFORE=$(route -n get default 2>/dev/null | shasum | awk '{print $1}')
 cd "$ROOT"
@@ -68,21 +68,21 @@ for _attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
 done
 [ "$READY" -eq 1 ] || {
     sed -n '1,120p' "$LOG_FILE" >&2
-    fail "로컬 SOCKS 프록시가 시작되지 않았습니다."
+    fail "The local SOCKS proxy did not start."
 }
 
-printf '한 개의 테스트 요청만 휴대폰 릴레이로 전송합니다: %s\n' "$TEST_URL"
+printf 'Sending exactly one test request through the phone relay: %s\n' "$TEST_URL"
 if curl --fail --silent --show-error --output /dev/null \
         --connect-timeout 10 --max-time 30 \
         --proxy "socks5h://127.0.0.1:$SOCKS_PORT" "$TEST_URL"; then
-    printf '성공: 요청이 OpenTetrd 경로를 통과했습니다.\n'
+    printf 'Success: the request travelled through the OpenTetrd path.\n'
 else
     sed -n '1,120p' "$LOG_FILE" >&2
-    fail "터널 요청에 실패했습니다. Tetrd는 그대로 실행해 두고 Android 릴레이 상태를 확인하세요."
+    fail "The tunnelled request failed. Leave Tetrd running and check the Android relay."
 fi
 
 ROUTE_AFTER=$(route -n get default 2>/dev/null | shasum | awk '{print $1}')
 if [ "$ROUTE_BEFORE" != "$ROUTE_AFTER" ]; then
-    fail "시험 도중 기본 경로가 외부 요인으로 변경됐습니다. OpenTetrd는 경로를 변경하지 않았지만 상태를 확인하세요."
+    fail "The default route changed during the test due to an external factor. OpenTetrd did not change it, but check your network state."
 fi
-printf '확인: macOS 기본 경로는 시험 전후 동일합니다. Tetrd 설정은 건드리지 않았습니다.\n'
+printf 'Verified: the macOS default route is unchanged, and Tetrd settings were left alone.\n'

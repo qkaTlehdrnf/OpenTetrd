@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>ko</string>
+    <string>en</string>
     <key>CFBundleDisplayName</key>
     <string>OpenTetrd</string>
     <key>CFBundleExecutable</key>

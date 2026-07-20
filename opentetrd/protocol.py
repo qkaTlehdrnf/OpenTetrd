@@ -68,13 +68,16 @@ async def bridge(
     right_writer: asyncio.StreamWriter,
 ) -> None:
     async def pump(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        # OSError covers ConnectionError plus the rarer socket failures (ENOTCONN,
+        # EPIPE on some platforms). CancelledError must propagate so that shutdown
+        # actually cancels this task instead of being swallowed as a clean EOF.
         try:
             while data := await reader.read(65536):
                 writer.write(data)
                 await writer.drain()
             if writer.can_write_eof():
                 writer.write_eof()
-        except (ConnectionError, asyncio.CancelledError):
+        except OSError:
             pass
 
     tasks = [

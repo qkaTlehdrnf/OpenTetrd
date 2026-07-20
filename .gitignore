@@ -5,3 +5,7 @@ __pycache__/
 android/.gradle/
 android/app/build/
 dist/
+
+# Python build artifacts
+build/
+*.egg-info/

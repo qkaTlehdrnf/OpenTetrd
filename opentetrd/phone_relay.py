@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import logging
 import signal
+import socket
 
 from .protocol import (
     STATUS_BAD_REQUEST,
@@ -17,13 +18,25 @@ from .protocol import (
 )
 
 LOG = logging.getLogger("opentetrd.phone")
+REQUEST_TIMEOUT = 30.0
+
+
+def _set_nodelay(writer: asyncio.StreamWriter) -> None:
+    sock = writer.get_extra_info("socket")
+    if sock is not None:
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
 
 
 async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     remote_writer: asyncio.StreamWriter | None = None
+    _set_nodelay(writer)
     try:
-        host, port = await read_request(reader)
-    except (ProtocolError, asyncio.IncompleteReadError) as exc:
+        # Bound the header read so a silent peer cannot pin this task forever.
+        host, port = await asyncio.wait_for(read_request(reader), timeout=REQUEST_TIMEOUT)
+    except (ProtocolError, asyncio.IncompleteReadError, TimeoutError) as exc:
         LOG.warning("bad relay request: %s", exc)
         writer.write(bytes([STATUS_BAD_REQUEST]))
         await writer.drain()
@@ -37,6 +50,7 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> 
             writer.write(bytes([STATUS_CONNECT_FAILED]))
             await writer.drain()
         else:
+            _set_nodelay(remote_writer)
             writer.write(bytes([STATUS_OK]))
             await writer.drain()
             LOG.info("relaying %s:%d", host, port)

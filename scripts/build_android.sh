@@ -25,8 +25,8 @@ if command -v gradle >/dev/null 2>&1; then
 fi
 
 cat >&2 <<'EOF'
-Android 빌드 도구가 없습니다.
-Android Studio에서 android/ 폴더를 열어 Build > Build APK(s)를 실행하거나
-Gradle 8.9를 설치한 뒤 이 스크립트를 다시 실행하세요.
+No Android build tooling found.
+Open the android/ folder in Android Studio and run Build > Build APK(s),
+or install Gradle 8.9 and run this script again.
 EOF
 exit 2

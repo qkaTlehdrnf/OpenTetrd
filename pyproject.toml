@@ -11,3 +11,7 @@ requires-python = ">=3.11"
 [project.scripts]
 opentetrd-desktop = "opentetrd.desktop:main"
 opentetrd-phone = "opentetrd.phone_relay:main"
+
+# `tests` is a second top-level package, so setuptools refuses to guess. Be explicit.
+[tool.setuptools]
+packages = ["opentetrd"]
