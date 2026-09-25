@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 /// Offers to move the app into /Applications when it is launched from somewhere else
@@ -8,7 +9,9 @@ enum ApplicationMover {
 
     /// Returns true when the app is being moved and relaunched; the caller should stop setting up.
     static func offerMoveIfNeeded() -> Bool {
-        let source = Bundle.main.bundleURL.resolvingSymlinksInPath()
+        // A quarantined app opened from a disk image or Downloads runs from a random
+        // translocation path; resolve where the bundle really lives first.
+        let source = originalLocation(of: Bundle.main.bundleURL).resolvingSymlinksInPath()
         guard source.pathExtension == "app",
               !isInApplicationsFolder(source),
               !UserDefaults.standard.bool(forKey: skipKey) else { return false }
@@ -57,6 +60,28 @@ enum ApplicationMover {
         return true
     }
 
+    private typealias IsTranslocatedFunction = @convention(c)
+        (CFURL, UnsafeMutablePointer<Bool>, UnsafeMutablePointer<Unmanaged<CFError>?>?) -> UInt8
+    private typealias OriginalPathFunction = @convention(c)
+        (CFURL, UnsafeMutablePointer<Unmanaged<CFError>?>?) -> Unmanaged<CFURL>?
+
+    /// Maps an App Translocation path back to the bundle the user actually opened.
+    private static func originalLocation(of url: URL) -> URL {
+        guard url.path.contains("/AppTranslocation/"),
+              let security = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY)
+        else { return url }
+        defer { dlclose(security) }
+        guard let isTranslocatedSymbol = dlsym(security, "SecTranslocateIsTranslocatedURL"),
+              let originalPathSymbol = dlsym(security, "SecTranslocateCreateOriginalPathForURL")
+        else { return url }
+        let isTranslocated = unsafeBitCast(isTranslocatedSymbol, to: IsTranslocatedFunction.self)
+        let originalPath = unsafeBitCast(originalPathSymbol, to: OriginalPathFunction.self)
+        var translocated = false
+        guard isTranslocated(url as CFURL, &translocated, nil) != 0, translocated,
+              let original = originalPath(url as CFURL, nil) else { return url }
+        return original.takeRetainedValue() as URL
+    }
+
     private static func isInApplicationsFolder(_ url: URL) -> Bool {
         let path = url.path
         let folders = FileManager.default.urls(for: .applicationDirectory, in: [.localDomainMask, .userDomainMask])
@@ -89,6 +114,9 @@ enum ApplicationMover {
             // Standard users cannot write to /Applications; ask for an administrator once.
             try installAsAdministrator(from: source, to: destination)
         }
+        // Finder clears the quarantine flag on the bundle folder when the user drags an app
+        // out of a disk image; without it macOS keeps running the copy from a translocation path.
+        removexattr(destination.path, "com.apple.quarantine", 0)
     }
 
     private static func installAsAdministrator(from source: URL, to destination: URL) throws {
@@ -97,7 +125,8 @@ enum ApplicationMover {
                 .replacingOccurrences(of: "\"", with: "\\\"") + "\""
         }
         let command = "\"/bin/rm -rf \" & \(quoted(destination.path)) & \" && /usr/bin/ditto \" & "
-            + "\(quoted(source.path)) & \" \" & \(quoted(destination.path))"
+            + "\(quoted(source.path)) & \" \" & \(quoted(destination.path)) & "
+            + "\" && /usr/sbin/chown -R \(getuid()):\(getgid()) \" & \(quoted(destination.path))"
         var error: NSDictionary?
         NSAppleScript(source: "do shell script \(command) with administrator privileges")?
             .executeAndReturnError(&error)
