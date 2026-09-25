@@ -8,6 +8,7 @@ swiftc -swift-version 5 -parse-as-library -O \
     -target arm64-apple-macos13.0 \
     -framework AppKit \
     "$ROOT/macos/OpenTetrdMac.swift" \
+    "$ROOT/macos/ApplicationMover.swift" \
     -o "$APP/Contents/MacOS/OpenTetrd"
 cp "$ROOT/macos/Info.plist" "$APP/Contents/Info.plist"
 codesign --force --deep --sign - "$APP"

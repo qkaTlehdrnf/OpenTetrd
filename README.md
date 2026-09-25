@@ -11,6 +11,9 @@
 
 > 현재 `v0.1.0`은 초기 시험판입니다. macOS 앱은 공증되지 않았으므로 압축 해제 후 앱을 Control-클릭하고 **열기**를 선택해야 할 수 있습니다.
 
+**macOS 설치:** DMG를 열면 나타나는 창에서 OpenTetrd 아이콘을 **Applications** 폴더로 드래그합니다.
+DMG나 다운로드 폴더에서 바로 실행해도 첫 실행 시 **Applications로 이동**을 제안하며, 누르면 복사 후 자동으로 다시 실행합니다.
+
 Tetrd를 끄지 않은 채 별도의 요청만 휴대폰 인터넷으로 보내 시험하는 안전 우선 프로토타입입니다.
 Android 릴레이가 목적지 TCP 연결을 만들고, Mac의 SOCKS5 프록시가 그 연결을 USB의 ADB 포트 포워딩으로 사용합니다.
 
@@ -93,6 +96,14 @@ Tetrd는 **계속 켜 둡니다**. Android 릴레이가 실행 중이고 USB 디
 ```sh
 ./scripts/build_macos.sh
 open dist/OpenTetrd.app
+```
+
+배포용 DMG는 다음 명령으로 만듭니다. 앱 아이콘, 화살표, Applications 바로가기가 배치된 설치 창이 포함됩니다.
+처음 실행 시 터미널이 Finder 제어 권한을 요청하면 허용하세요.
+
+```sh
+./scripts/package_macos_dmg.sh
+# -> dist/OpenTetrd-macOS-arm64-<버전>.dmg
 ```
 
 휴대폰 앱에서 먼저 `릴레이 시작`을 누른 다음 Mac 앱에서 `OpenTetrd 시작`, `연결 시험` 순서로 누릅니다.
