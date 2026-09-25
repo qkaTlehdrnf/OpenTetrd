@@ -2,7 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 
-private enum AppError: LocalizedError {
+enum AppError: LocalizedError {
     case message(String)
     var errorDescription: String? {
         if case .message(let text) = self { return text }
@@ -326,6 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var stopButton: NSButton!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if ApplicationMover.offerMoveIfNeeded() { return }
         buildWindow()
         manager.logger = { [weak self] message in self?.appendLog(message) }
         NSApp.activate(ignoringOtherApps: true)
